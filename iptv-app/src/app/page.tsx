@@ -1,25 +1,17 @@
 'use client'
 import { useEffect, useMemo } from 'react'
-import {
-  Tv, Globe, Newspaper, Trophy, Film, Music, Baby, BookOpen,
-  Star, Clock, Flame, Sparkles
-} from 'lucide-react'
+import { Tv, Globe, Star, Clock, Flame } from 'lucide-react'
 import { useChannelStore } from '@/stores/channelStore'
 import { useHistoryStore } from '@/stores/historyStore'
 import { useFavoritesStore } from '@/stores/favoritesStore'
 import HeroBanner from '@/components/ui/HeroBanner'
 import ChannelCarousel from '@/components/channel/ChannelCarousel'
 import { CarouselSkeleton } from '@/components/ui/Skeleton'
+import { CATEGORY_META } from '@/stores/categoryStore'
 
 const CATEGORIES = [
-  { id: 'news', label: 'News', icon: <Newspaper className="w-4 h-4" /> },
-  { id: 'sports', label: 'Sports', icon: <Trophy className="w-4 h-4" /> },
-  { id: 'movies', label: 'Movies', icon: <Film className="w-4 h-4" /> },
-  { id: 'music', label: 'Music', icon: <Music className="w-4 h-4" /> },
-  { id: 'kids', label: 'Kids', icon: <Baby className="w-4 h-4" /> },
-  { id: 'documentary', label: 'Documentary', icon: <BookOpen className="w-4 h-4" /> },
-  { id: 'entertainment', label: 'Entertainment', icon: <Sparkles className="w-4 h-4" /> },
-  { id: 'animation', label: 'Anime', icon: <Star className="w-4 h-4" /> },
+  'news', 'sports', 'movies', 'entertainment', 'music', 'kids',
+  'documentary', 'animation', 'religious', 'education', 'lifestyle', 'business',
 ]
 
 export default function HomePage() {
@@ -67,9 +59,9 @@ export default function HomePage() {
   // Category channels
   const categoryChannels = useMemo(() => {
     const result: Record<string, typeof channels> = {}
-    for (const cat of CATEGORIES) {
-      result[cat.id] = channels
-        .filter((c) => c.categories?.includes(cat.id) && streamMap.has(c.id))
+    for (const catId of CATEGORIES) {
+      result[catId] = channels
+        .filter((c) => c.categories?.includes(catId) && streamMap.has(c.id))
         .slice(0, 20)
     }
     return result
@@ -123,18 +115,19 @@ export default function HomePage() {
       />
 
       {/* Category sections */}
-      {CATEGORIES.map((cat) =>
-        categoryChannels[cat.id]?.length > 0 ? (
+      {CATEGORIES.map((catId) => {
+        const meta = CATEGORY_META[catId]
+        if (!meta || !categoryChannels[catId]?.length) return null
+        return (
           <ChannelCarousel
-            key={cat.id}
-            title={cat.label}
-            channels={categoryChannels[cat.id]}
+            key={catId}
+            title={`${meta.icon} ${meta.name}`}
+            channels={categoryChannels[catId]}
             streams={streams}
-            icon={cat.icon}
-            viewAllHref={`/category/${cat.id}`}
+            viewAllHref={`/category/${meta.slug}`}
           />
-        ) : null
-      )}
+        )
+      })}
 
       {/* All channels count */}
       <div className="text-center py-8">
