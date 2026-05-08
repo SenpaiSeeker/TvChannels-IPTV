@@ -5,15 +5,14 @@ import Image from 'next/image'
 import Link from 'next/link'
 import {
   Heart, Globe, Tag, Languages, ArrowLeft, ExternalLink,
-  Wifi, WifiOff, Share2, ChevronRight, SkipBack, SkipForward,
-  Shuffle, List
+  Wifi, WifiOff, Share2, SkipBack, SkipForward,
+  Shuffle, List, Tv2
 } from 'lucide-react'
 import { useChannelStore } from '@/stores/channelStore'
 import { useFavoritesStore } from '@/stores/favoritesStore'
 import { useHistoryStore } from '@/stores/historyStore'
 import VideoPlayer, { type VideoPlayerHandle } from '@/components/player/VideoPlayer'
 import TVRemote from '@/components/player/TVRemote'
-import ChannelCard from '@/components/channel/ChannelCard'
 import { getFlagEmoji } from '@/utils/format'
 import { cn } from '@/utils/cn'
 import type { Stream, Channel } from '@/types'
@@ -32,6 +31,7 @@ export default function WatchPage() {
   const [volume, setVolume] = useState(80)
   const [muted, setMuted] = useState(false)
   const [showChannelList, setShowChannelList] = useState(false)
+  const [selectedSimilarCategory, setSelectedSimilarCategory] = useState<string | null>(null)
 
   const playerRef = useRef<VideoPlayerHandle>(null)
 
@@ -49,18 +49,30 @@ export default function WatchPage() {
   const liveChannels = useMemo(() => channels.filter((c) => streamMap.has(c.id)), [channels, streamMap])
   const currentIndex = useMemo(() => liveChannels.findIndex((c) => c.id === channelId), [liveChannels, channelId])
 
-  // Similar channels
+  // Categories available for similar channels tabs
+  const similarCategories = useMemo(() => {
+    if (!channel) return []
+    const cats: string[] = []
+    if (channel.country) cats.push('country:' + channel.country)
+    if (channel.categories) channel.categories.forEach((c) => cats.push(c))
+    return cats
+  }, [channel])
+
+  // Active similar category tab (default to first)
+  const activeSimilarCategory = selectedSimilarCategory ?? similarCategories[0] ?? null
+
+  // Similar channels filtered by active category
   const similarChannels = useMemo(() => {
     if (!channel) return []
-    return channels
-      .filter(
-        (c) =>
-          c.id !== channelId &&
-          (c.country === channel.country ||
-            c.categories?.some((cat) => channel.categories?.includes(cat)))
-      )
-      .slice(0, 12)
-  }, [channels, channel, channelId])
+    if (!activeSimilarCategory) return []
+    if (activeSimilarCategory.startsWith('country:')) {
+      const countryCode = activeSimilarCategory.replace('country:', '')
+      return channels.filter((c) => c.id !== channelId && c.country === countryCode)
+    }
+    return channels.filter(
+      (c) => c.id !== channelId && c.categories?.includes(activeSimilarCategory)
+    )
+  }, [channels, channel, channelId, activeSimilarCategory])
 
   useEffect(() => {
     if (channel) {
@@ -378,45 +390,97 @@ export default function WatchPage() {
         {/* Sidebar */}
         <div className="space-y-6">
           {/* Similar Channels */}
-          <div className="glass-card rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-white">Similar Channels</h3>
-              <ChevronRight className="w-4 h-4 text-gray-600" />
+          <div className="glass-card rounded-2xl overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center gap-2 px-4 pt-4 pb-3 border-b border-white/5">
+              <Tv2 className="w-4 h-4 text-indigo-400" />
+              <h3 className="font-semibold text-white text-sm">Similar Channels</h3>
+              <span className="ml-auto text-xs text-gray-500 bg-white/5 px-2 py-0.5 rounded-full">
+                {similarChannels.length}
+              </span>
             </div>
-            <div className="space-y-2">
-              {similarChannels.slice(0, 8).map((ch) => (
-                <Link
-                  key={ch.id}
-                  href={`/watch/${ch.id}`}
-                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors group"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center overflow-hidden flex-shrink-0">
-                    {ch.logo ? (
-                      <Image
-                        src={ch.logo}
-                        alt={ch.name}
-                        width={40}
-                        height={40}
-                        className="object-contain"
-                        unoptimized
-                      />
+
+            {/* Category Tabs */}
+            {similarCategories.length > 0 && (
+              <div className="flex gap-1.5 px-3 py-2.5 overflow-x-auto scrollbar-hide border-b border-white/5">
+                {similarCategories.map((cat) => {
+                  const isActive = (selectedSimilarCategory ?? similarCategories[0]) === cat
+                  const label = cat.startsWith('country:')
+                    ? (getFlagEmoji(cat.replace('country:', '')) + ' ' + cat.replace('country:', '').toUpperCase())
+                    : cat.charAt(0).toUpperCase() + cat.slice(1)
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => setSelectedSimilarCategory(cat)}
+                      className={
+                        'flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ' +
+                        (isActive
+                          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+                          : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-gray-200')
+                      }
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Scrollable Channel List */}
+            <div className="overflow-y-auto max-h-[420px] divide-y divide-white/5 custom-scrollbar">
+              {similarChannels.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-center px-4">
+                  <span className="text-3xl mb-2">📺</span>
+                  <p className="text-sm text-gray-500">No channels found</p>
+                </div>
+              ) : (
+                similarChannels.map((ch) => (
+                  <Link
+                    key={ch.id}
+                    href={`/watch/${ch.id}`}
+                    className={
+                      'flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors group ' +
+                      (ch.id === channelId ? 'bg-indigo-600/10' : '')
+                    }
+                  >
+                    {/* Logo */}
+                    <div className="w-10 h-10 rounded-lg bg-white/5 border border-white/5 flex items-center justify-center overflow-hidden flex-shrink-0">
+                      {ch.logo ? (
+                        <Image
+                          src={ch.logo}
+                          alt={ch.name}
+                          width={40}
+                          height={40}
+                          className="object-contain p-0.5"
+                          unoptimized
+                        />
+                      ) : (
+                        <span className="text-base">{getFlagEmoji(ch.country)}</span>
+                      )}
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-300 truncate group-hover:text-white transition-colors leading-tight">
+                        {ch.name}
+                      </p>
+                      <p className="text-xs text-gray-600 mt-0.5">
+                        {getFlagEmoji(ch.country)} {ch.country?.toUpperCase()}
+                        {ch.categories && ch.categories.length > 0 && (
+                          <span className="ml-1 capitalize text-gray-700">· {ch.categories[0]}</span>
+                        )}
+                      </p>
+                    </div>
+
+                    {/* Live dot */}
+                    {streamMap.has(ch.id) ? (
+                      <span className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0 shadow-sm shadow-green-400/50" />
                     ) : (
-                      <span className="text-sm">{getFlagEmoji(ch.country)}</span>
+                      <span className="w-2 h-2 rounded-full bg-gray-700 flex-shrink-0" />
                     )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-300 truncate group-hover:text-white transition-colors">
-                      {ch.name}
-                    </p>
-                    <p className="text-xs text-gray-600">
-                      {getFlagEmoji(ch.country)} {ch.country?.toUpperCase()}
-                    </p>
-                  </div>
-                  {streamMap.has(ch.id) && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />
-                  )}
-                </Link>
-              ))}
+                  </Link>
+                ))
+              )}
             </div>
           </div>
 
@@ -478,17 +542,6 @@ export default function WatchPage() {
         </div>
       </div>
 
-      {/* More similar channels grid */}
-      {similarChannels.length > 8 && (
-        <div className="mt-8">
-          <h2 className="text-lg font-bold text-white mb-4">More Like This</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-            {similarChannels.slice(8).map((ch) => (
-              <ChannelCard key={ch.id} channel={ch} stream={streamMap.get(ch.id)} size="sm" />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
