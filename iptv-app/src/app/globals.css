@@ -151,3 +151,31 @@ video::-webkit-media-controls {
 .gradient-bottom {
   background: linear-gradient(to top, var(--background), transparent);
 }
+
+/* Custom scrollbar for channel list */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #2d2d4e #0a0a0f;
+}
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #2d2d4e;
+  border-radius: 2px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #6366f1;
+}
+
+/* TV OSD channel number flash */
+@keyframes osd-in {
+  0% { transform: translateY(-10px) scale(0.95); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.osd-enter {
+  animation: osd-in 0.2s ease forwards;
+}

@@ -1,21 +1,45 @@
 'use client'
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
 import {
   Play, Pause, Volume2, VolumeX, Maximize, Minimize,
   RefreshCw, AlertCircle, Loader2, PictureInPicture2,
-  Settings, ChevronUp, ChevronDown
+  Settings, ChevronUp, ChevronDown, SkipBack, SkipForward,
+  List
 } from 'lucide-react'
 import { cn } from '@/utils/cn'
 import type { Stream } from '@/types'
 
+export interface VideoPlayerHandle {
+  getVolume: () => number
+  getMuted: () => boolean
+  setVolume: (v: number) => void
+  setMuted: (m: boolean) => void
+  toggleFullscreen: () => void
+}
+
 interface VideoPlayerProps {
   stream: Stream
   channelName: string
+  channelNumber?: number
   onError?: (err: string) => void
   className?: string
+  onPrevChannel?: () => void
+  onNextChannel?: () => void
+  onToggleChannelList?: () => void
+  externalVolume?: number
+  externalMuted?: boolean
+  onVolumeChange?: (v: number) => void
+  onMuteChange?: (m: boolean) => void
 }
 
-export default function VideoPlayer({ stream, channelName, onError, className }: VideoPlayerProps) {
+const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(function VideoPlayer(
+  {
+    stream, channelName, channelNumber, onError, className,
+    onPrevChannel, onNextChannel, onToggleChannelList,
+    externalVolume, externalMuted, onVolumeChange, onMuteChange,
+  },
+  ref
+) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const hlsRef = useRef<unknown>(null)
@@ -24,12 +48,43 @@ export default function VideoPlayer({ stream, channelName, onError, className }:
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [volume, setVolume] = useState(80)
-  const [muted, setMuted] = useState(false)
+  const [volume, setVolume] = useState(externalVolume ?? 80)
+  const [muted, setMuted] = useState(externalMuted ?? false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showControls, setShowControls] = useState(true)
   const [retryCount, setRetryCount] = useState(0)
   const [showVolumeSlider, setShowVolumeSlider] = useState(false)
+
+  // Sync external volume/muted
+  useEffect(() => {
+    if (externalVolume !== undefined) {
+      setVolume(externalVolume)
+      const video = videoRef.current
+      if (video) video.volume = externalVolume / 100
+    }
+  }, [externalVolume])
+
+  useEffect(() => {
+    if (externalMuted !== undefined) {
+      setMuted(externalMuted)
+      const video = videoRef.current
+      if (video) video.muted = externalMuted
+    }
+  }, [externalMuted])
+
+  // Expose imperative handle
+  useImperativeHandle(ref, () => ({
+    getVolume: () => volume,
+    getMuted: () => muted,
+    setVolume: (v: number) => handleVolumeChange(v),
+    setMuted: (m: boolean) => {
+      const video = videoRef.current
+      if (video) video.muted = m
+      setMuted(m)
+      onMuteChange?.(m)
+    },
+    toggleFullscreen,
+  }))
 
   const initPlayer = useCallback(async () => {
     const video = videoRef.current
@@ -168,6 +223,7 @@ export default function VideoPlayer({ stream, channelName, onError, className }:
     if (!video) return
     video.muted = !video.muted
     setMuted(video.muted)
+    onMuteChange?.(video.muted)
   }
 
   const handleVolumeChange = (val: number) => {
@@ -175,8 +231,10 @@ export default function VideoPlayer({ stream, channelName, onError, className }:
     if (!video) return
     video.volume = val / 100
     setVolume(val)
-    if (val === 0) setMuted(true)
-    else setMuted(false)
+    const newMuted = val === 0
+    setMuted(newMuted)
+    onVolumeChange?.(val)
+    onMuteChange?.(newMuted)
   }
 
   const toggleFullscreen = () => {
@@ -269,12 +327,38 @@ export default function VideoPlayer({ stream, channelName, onError, className }:
             <span className="flex items-center gap-1 text-xs bg-red-500 text-white px-2 py-0.5 rounded-full live-badge font-bold">
               ● LIVE
             </span>
+            {channelNumber !== undefined && (
+              <span className="text-xs bg-black/50 text-indigo-300 px-2 py-0.5 rounded-full font-mono font-bold border border-indigo-500/30">
+                CH {String(channelNumber).padStart(2, '0')}
+              </span>
+            )}
             <span className="text-white text-sm font-semibold">{channelName}</span>
           </div>
+          {/* Channel list toggle */}
+          {onToggleChannelList && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleChannelList() }}
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+              title="Channel List (L)"
+            >
+              <List className="w-4 h-4 text-white" />
+            </button>
+          )}
         </div>
 
         {/* Bottom controls */}
         <div className="relative flex items-center gap-3 px-4 pb-4">
+          {/* Prev Channel */}
+          {onPrevChannel && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onPrevChannel() }}
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+              title="Previous Channel (←)"
+            >
+              <SkipBack className="w-4 h-4 text-white" />
+            </button>
+          )}
+
           {/* Play/Pause */}
           <button
             onClick={togglePlay}
@@ -286,6 +370,17 @@ export default function VideoPlayer({ stream, channelName, onError, className }:
               <Play className="w-4 h-4 text-white fill-white ml-0.5" />
             )}
           </button>
+
+          {/* Next Channel */}
+          {onNextChannel && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onNextChannel() }}
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors"
+              title="Next Channel (→)"
+            >
+              <SkipForward className="w-4 h-4 text-white" />
+            </button>
+          )}
 
           {/* Volume */}
           <div className="relative flex items-center gap-2">
@@ -356,4 +451,6 @@ export default function VideoPlayer({ stream, channelName, onError, className }:
       <style>{`.absolute.inset-0.flex.flex-col.justify-end { z-index: 2; }`}</style>
     </div>
   )
-}
+})
+
+export default VideoPlayer
