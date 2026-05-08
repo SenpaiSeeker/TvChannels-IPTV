@@ -38,6 +38,42 @@ export interface Category {
   name: string
 }
 
+export interface ExtendedCategory {
+  id: string
+  name: string
+  slug: string
+  icon: string
+  color: string
+  gradient: string
+  description: string
+  total_channels: number
+  active_channels: number
+  trending?: boolean
+  featured?: boolean
+  subcategories?: string[]
+}
+
+export interface CategoryFilters {
+  query: string
+  countries: string[]
+  languages: string[]
+  hdOnly: boolean
+  activeOnly: boolean
+  nsfw: boolean
+  sortBy: 'name' | 'country' | 'active' | 'quality'
+  sortDir: 'asc' | 'desc'
+}
+
+export interface CategoryStore {
+  categories: ExtendedCategory[]
+  selectedCategory: string | null
+  channels: Channel[]
+  loading: boolean
+  filters: CategoryFilters
+  page: number
+  hasMore: boolean
+}
+
 export interface Country {
   code: string
   name: string
