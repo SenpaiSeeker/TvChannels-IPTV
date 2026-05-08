@@ -1,20 +1,22 @@
 'use client'
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import {
   Heart, Globe, Tag, Languages, ArrowLeft, ExternalLink,
-  Wifi, WifiOff, Share2, ChevronRight
+  Wifi, WifiOff, Share2, ChevronRight, SkipBack, SkipForward,
+  Shuffle, List
 } from 'lucide-react'
 import { useChannelStore } from '@/stores/channelStore'
 import { useFavoritesStore } from '@/stores/favoritesStore'
 import { useHistoryStore } from '@/stores/historyStore'
-import VideoPlayer from '@/components/player/VideoPlayer'
+import VideoPlayer, { type VideoPlayerHandle } from '@/components/player/VideoPlayer'
+import TVRemote from '@/components/player/TVRemote'
 import ChannelCard from '@/components/channel/ChannelCard'
 import { getFlagEmoji } from '@/utils/format'
 import { cn } from '@/utils/cn'
-import type { Stream } from '@/types'
+import type { Stream, Channel } from '@/types'
 
 export default function WatchPage() {
   const params = useParams()
@@ -27,6 +29,11 @@ export default function WatchPage() {
 
   const [selectedStreamIndex, setSelectedStreamIndex] = useState(0)
   const [imgError, setImgError] = useState(false)
+  const [volume, setVolume] = useState(80)
+  const [muted, setMuted] = useState(false)
+  const [showChannelList, setShowChannelList] = useState(false)
+
+  const playerRef = useRef<VideoPlayerHandle>(null)
 
   useEffect(() => {
     fetchAll()
@@ -35,6 +42,12 @@ export default function WatchPage() {
   const channel = useMemo(() => channels.find((c) => c.id === channelId), [channels, channelId])
   const channelStreams = useMemo(() => streams.filter((s) => s.channel === channelId), [streams, channelId])
   const currentStream: Stream | undefined = channelStreams[selectedStreamIndex]
+
+  const streamMap = useMemo(() => new Map(streams.map((s) => [s.channel, s])), [streams])
+
+  // All live channels (with streams) — used for prev/next navigation
+  const liveChannels = useMemo(() => channels.filter((c) => streamMap.has(c.id)), [channels, streamMap])
+  const currentIndex = useMemo(() => liveChannels.findIndex((c) => c.id === channelId), [liveChannels, channelId])
 
   // Similar channels
   const similarChannels = useMemo(() => {
@@ -49,13 +62,40 @@ export default function WatchPage() {
       .slice(0, 12)
   }, [channels, channel, channelId])
 
-  const streamMap = useMemo(() => new Map(streams.map((s) => [s.channel, s])), [streams])
-
   useEffect(() => {
     if (channel) {
       addHistory(channel.id)
     }
   }, [channel])
+
+  // Reset stream index when channel changes
+  useEffect(() => {
+    setSelectedStreamIndex(0)
+    setImgError(false)
+  }, [channelId])
+
+  const navigateToChannel = useCallback((ch: Channel) => {
+    router.push(`/watch/${ch.id}`)
+  }, [router])
+
+  const goPrev = useCallback(() => {
+    if (liveChannels.length === 0) return
+    const idx = currentIndex <= 0 ? liveChannels.length - 1 : currentIndex - 1
+    navigateToChannel(liveChannels[idx])
+  }, [liveChannels, currentIndex, navigateToChannel])
+
+  const goNext = useCallback(() => {
+    if (liveChannels.length === 0) return
+    const idx = currentIndex >= liveChannels.length - 1 ? 0 : currentIndex + 1
+    navigateToChannel(liveChannels[idx])
+  }, [liveChannels, currentIndex, navigateToChannel])
+
+  const goRandom = useCallback(() => {
+    if (liveChannels.length === 0) return
+    let idx = Math.floor(Math.random() * liveChannels.length)
+    if (idx === currentIndex) idx = (idx + 1) % liveChannels.length
+    navigateToChannel(liveChannels[idx])
+  }, [liveChannels, currentIndex, navigateToChannel])
 
   const favorite = channel ? isFavorite(channel.id) : false
 
@@ -67,10 +107,7 @@ export default function WatchPage() {
 
   const handleShare = async () => {
     if (navigator.share) {
-      await navigator.share({
-        title: channel?.name,
-        url: window.location.href,
-      })
+      await navigator.share({ title: channel?.name, url: window.location.href })
     } else {
       navigator.clipboard.writeText(window.location.href)
     }
@@ -114,13 +151,22 @@ export default function WatchPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Main content */}
-        <div className="xl:col-span-2 space-y-6">
+        <div className="xl:col-span-2 space-y-4">
           {/* Video Player */}
           {currentStream ? (
             <VideoPlayer
+              ref={playerRef}
               stream={currentStream}
               channelName={channel.name}
+              channelNumber={currentIndex >= 0 ? currentIndex + 1 : undefined}
               className="w-full aspect-video"
+              onPrevChannel={goPrev}
+              onNextChannel={goNext}
+              onToggleChannelList={() => setShowChannelList((v) => !v)}
+              externalVolume={volume}
+              externalMuted={muted}
+              onVolumeChange={setVolume}
+              onMuteChange={setMuted}
             />
           ) : (
             <div className="w-full aspect-video bg-black/60 rounded-2xl flex flex-col items-center justify-center border border-white/5">
@@ -129,6 +175,19 @@ export default function WatchPage() {
               <p className="text-gray-600 text-sm mt-1">This channel may be offline or geo-restricted</p>
             </div>
           )}
+
+          {/* ── TV Remote Navigation ── */}
+          <TVRemote
+            currentChannel={channel}
+            allChannels={channels}
+            streamMap={streamMap}
+            onChannelChange={navigateToChannel}
+            volume={volume}
+            muted={muted}
+            onVolumeChange={setVolume}
+            onMuteToggle={() => setMuted((m) => !m)}
+            onFullscreen={() => playerRef.current?.toggleFullscreen()}
+          />
 
           {/* Stream selector */}
           {channelStreams.length > 1 && (
@@ -195,12 +254,38 @@ export default function WatchPage() {
                         Offline
                       </span>
                     )}
+                    {currentIndex >= 0 && (
+                      <span className="text-xs text-indigo-400 font-mono bg-indigo-600/10 border border-indigo-500/20 px-2 py-0.5 rounded-full">
+                        CH {String(currentIndex + 1).padStart(2, '0')}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <button
+                  onClick={goPrev}
+                  className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10 transition-all"
+                  title="Previous Channel"
+                >
+                  <SkipBack className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={goNext}
+                  className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10 transition-all"
+                  title="Next Channel"
+                >
+                  <SkipForward className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={goRandom}
+                  className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-gray-400 hover:text-purple-400 hover:bg-purple-500/10 transition-all"
+                  title="Random Channel"
+                >
+                  <Shuffle className="w-4 h-4" />
+                </button>
                 <button
                   onClick={toggleFavorite}
                   className={cn(
@@ -333,6 +418,62 @@ export default function WatchPage() {
                 </Link>
               ))}
             </div>
+          </div>
+
+          {/* Quick Nav: Prev / Next */}
+          <div className="glass-card rounded-2xl p-4 space-y-3">
+            <h3 className="font-semibold text-white text-sm flex items-center gap-2">
+              <List className="w-4 h-4 text-indigo-400" />
+              Quick Navigation
+            </h3>
+            {/* Prev */}
+            {currentIndex > 0 && (
+              <button
+                onClick={goPrev}
+                className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-indigo-500/30 transition-all group text-left"
+              >
+                <SkipBack className="w-4 h-4 text-gray-500 group-hover:text-indigo-400 flex-shrink-0 transition-colors" />
+                <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {liveChannels[currentIndex - 1]?.logo ? (
+                    <Image src={liveChannels[currentIndex - 1].logo!} alt="" width={32} height={32} className="object-contain p-0.5" unoptimized />
+                  ) : (
+                    <span className="text-xs">{getFlagEmoji(liveChannels[currentIndex - 1]?.country || '')}</span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] text-gray-600 uppercase tracking-wider">Previous</p>
+                  <p className="text-xs text-gray-300 truncate font-medium">{liveChannels[currentIndex - 1]?.name}</p>
+                </div>
+              </button>
+            )}
+            {/* Next */}
+            {currentIndex < liveChannels.length - 1 && (
+              <button
+                onClick={goNext}
+                className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-indigo-500/30 transition-all group text-left"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] text-gray-600 uppercase tracking-wider">Next</p>
+                  <p className="text-xs text-gray-300 truncate font-medium">{liveChannels[currentIndex + 1]?.name}</p>
+                </div>
+                <div className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {liveChannels[currentIndex + 1]?.logo ? (
+                    <Image src={liveChannels[currentIndex + 1].logo!} alt="" width={32} height={32} className="object-contain p-0.5" unoptimized />
+                  ) : (
+                    <span className="text-xs">{getFlagEmoji(liveChannels[currentIndex + 1]?.country || '')}</span>
+                  )}
+                </div>
+                <SkipForward className="w-4 h-4 text-gray-500 group-hover:text-indigo-400 flex-shrink-0 transition-colors" />
+              </button>
+            )}
+            {/* Random */}
+            <button
+              onClick={goRandom}
+              className="w-full flex items-center gap-2 p-2.5 rounded-xl bg-purple-600/10 hover:bg-purple-600/20 border border-purple-500/20 hover:border-purple-500/40 transition-all group"
+            >
+              <Shuffle className="w-4 h-4 text-purple-400" />
+              <span className="text-xs text-purple-300 font-medium">Random Channel</span>
+            </button>
           </div>
         </div>
       </div>
