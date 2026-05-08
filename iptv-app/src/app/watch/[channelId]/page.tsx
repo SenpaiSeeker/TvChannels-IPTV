@@ -6,7 +6,7 @@ import Link from 'next/link'
 import {
   Heart, Globe, Tag, Languages, ArrowLeft, ExternalLink,
   Wifi, WifiOff, Share2, SkipBack, SkipForward,
-  Shuffle, List, Tv2
+  Shuffle, List, Tv2, Search, X
 } from 'lucide-react'
 import { useChannelStore } from '@/stores/channelStore'
 import { useFavoritesStore } from '@/stores/favoritesStore'
@@ -32,8 +32,10 @@ export default function WatchPage() {
   const [muted, setMuted] = useState(false)
   const [showChannelList, setShowChannelList] = useState(false)
   const [selectedSimilarCategory, setSelectedSimilarCategory] = useState<string | null>(null)
+  const [similarSearch, setSimilarSearch] = useState('')
 
   const playerRef = useRef<VideoPlayerHandle>(null)
+  const similarListRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetchAll()
@@ -73,6 +75,25 @@ export default function WatchPage() {
       (c) => c.id !== channelId && c.categories?.includes(activeSimilarCategory)
     )
   }, [channels, channel, channelId, activeSimilarCategory])
+
+  // Search-filtered similar channels
+  const filteredSimilarChannels = useMemo(() => {
+    if (!similarSearch.trim()) return similarChannels
+    const q = similarSearch.toLowerCase()
+    return similarChannels.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.country?.toLowerCase().includes(q) ||
+        c.categories?.some((cat) => cat.toLowerCase().includes(q))
+    )
+  }, [similarChannels, similarSearch])
+
+  // Reset search when category tab changes
+  const handleSimilarCategoryChange = useCallback((cat: string) => {
+    setSelectedSimilarCategory(cat)
+    setSimilarSearch('')
+    if (similarListRef.current) similarListRef.current.scrollTop = 0
+  }, [])
 
   useEffect(() => {
     if (channel) {
@@ -396,12 +417,34 @@ export default function WatchPage() {
               <Tv2 className="w-4 h-4 text-indigo-400" />
               <h3 className="font-semibold text-white text-sm">Similar Channels</h3>
               <span className="ml-auto text-xs text-gray-500 bg-white/5 px-2 py-0.5 rounded-full">
-                {similarChannels.length}
+                {filteredSimilarChannels.length}
               </span>
             </div>
 
+            {/* Search Input */}
+            <div className="px-3 py-2.5 border-b border-white/5">
+              <div className="relative flex items-center">
+                <Search className="absolute left-2.5 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+                <input
+                  type="text"
+                  value={similarSearch}
+                  onChange={(e) => setSimilarSearch(e.target.value)}
+                  placeholder="Search channels..."
+                  className="w-full bg-white/5 border border-white/10 rounded-lg pl-8 pr-8 py-1.5 text-xs text-gray-300 placeholder-gray-600 focus:outline-none focus:border-indigo-500/50 focus:bg-white/8 transition-all"
+                />
+                {similarSearch && (
+                  <button
+                    onClick={() => setSimilarSearch('')}
+                    className="absolute right-2.5 text-gray-500 hover:text-gray-300 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* Category Tabs */}
-            {similarCategories.length > 0 && (
+            {similarCategories.length > 0 && !similarSearch && (
               <div className="flex gap-1.5 px-3 py-2.5 overflow-x-auto scrollbar-hide border-b border-white/5">
                 {similarCategories.map((cat) => {
                   const isActive = (selectedSimilarCategory ?? similarCategories[0]) === cat
@@ -411,7 +454,7 @@ export default function WatchPage() {
                   return (
                     <button
                       key={cat}
-                      onClick={() => setSelectedSimilarCategory(cat)}
+                      onClick={() => handleSimilarCategoryChange(cat)}
                       className={
                         'flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all ' +
                         (isActive
@@ -427,20 +470,40 @@ export default function WatchPage() {
             )}
 
             {/* Scrollable Channel List */}
-            <div className="overflow-y-auto max-h-[420px] divide-y divide-white/5 custom-scrollbar">
-              {similarChannels.length === 0 ? (
+            <div
+              ref={similarListRef}
+              className="overflow-y-auto max-h-[420px] divide-y divide-white/5 custom-scrollbar"
+            >
+              {filteredSimilarChannels.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 text-center px-4">
-                  <span className="text-3xl mb-2">📺</span>
-                  <p className="text-sm text-gray-500">No channels found</p>
+                  <span className="text-3xl mb-2">{similarSearch ? '🔍' : '📺'}</span>
+                  <p className="text-sm text-gray-500">
+                    {similarSearch ? `No results for "${similarSearch}"` : 'No channels found'}
+                  </p>
+                  {similarSearch && (
+                    <button
+                      onClick={() => setSimilarSearch('')}
+                      className="mt-2 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                    >
+                      Clear search
+                    </button>
+                  )}
                 </div>
               ) : (
-                similarChannels.map((ch) => (
-                  <Link
+                filteredSimilarChannels.map((ch) => (
+                  <button
                     key={ch.id}
-                    href={`/watch/${ch.id}`}
+                    onClick={() => {
+                      const scrollTop = similarListRef.current?.scrollTop ?? 0
+                      router.push(`/watch/${ch.id}`, { scroll: false })
+                      // Restore scroll after navigation
+                      requestAnimationFrame(() => {
+                        if (similarListRef.current) similarListRef.current.scrollTop = scrollTop
+                      })
+                    }}
                     className={
-                      'flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors group ' +
-                      (ch.id === channelId ? 'bg-indigo-600/10' : '')
+                      'w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 transition-colors group text-left ' +
+                      (ch.id === channelId ? 'bg-indigo-600/10 border-l-2 border-indigo-500' : '')
                     }
                   >
                     {/* Logo */}
@@ -478,7 +541,7 @@ export default function WatchPage() {
                     ) : (
                       <span className="w-2 h-2 rounded-full bg-gray-700 flex-shrink-0" />
                     )}
-                  </Link>
+                  </button>
                 ))
               )}
             </div>
