@@ -16,7 +16,7 @@
     "hls.js": "^1.6.16",
     "idb-keyval": "^6.2.2",
     "lucide-react": "^1.14.0",
-    "next": "16.2.6",
+    "next": "16.2.11",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-intersection-observer": "^10.0.3",
